@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Gold Sniper Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+
+body{
+font-family: Arial;
+background:#0b0f19;
+color:white;
+text-align:center;
+padding:20px;
+}
+
+.card{
+background:#141a2b;
+padding:20px;
+border-radius:10px;
+margin:10px auto;
+max-width:400px;
+box-shadow:0 0 10px rgba(0,0,0,0.5);
+}
+
+.buy{color:#00ff9d;}
+.sell{color:#ff4d4d;}
+.hold{color:#ffc107;}
+
+</style>
+</head>
+
+<body>
+
+<h1>Gold Sniper Bot</h1>
+
+<div class="card">
+<p>Price: <span id="price">...</span></p>
+<p>Trend: <span id="trend">...</span></p>
+<p>Signal: <span id="signal">...</span></p>
+<p>RSI: <span id="rsi">...</span></p>
+<p>ATR: <span id="atr">...</span></p>
+<p>Support: <span id="support">...</span></p>
+<p>Resistance: <span id="resistance">...</span></p>
+<p>Stop Loss: <span id="sl">...</span></p>
+<p>Take Profit: <span id="tp">...</span></p>
+<p>Confidence: <span id="confidence">...</span></p>
+</div>
+
+<script>
+
+async function loadSignal(){
+
+const res = await fetch("/api/signal");
+
+const data = await res.json();
+
+document.getElementById("price").innerText = data.price;
+document.getElementById("trend").innerText = data.trend;
+document.getElementById("signal").innerText = data.signal;
+document.getElementById("rsi").innerText = data.rsi;
+document.getElementById("atr").innerText = data.atr;
+document.getElementById("support").innerText = data.support;
+document.getElementById("resistance").innerText = data.resistance;
+document.getElementById("sl").innerText = data.stop_loss;
+document.getElementById("tp").innerText = data.take_profit;
+document.getElementById("confidence").innerText = data.confidence;
+
+}
+
+loadSignal();
+
+setInterval(loadSignal,5000);
+
+</script>
+
+</body>
+  </html>
