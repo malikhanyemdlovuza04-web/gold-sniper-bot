@@ -1,125 +1,43 @@
-function calculateEMA(prices, period) {
-  const k = 2 / (period + 1);
-  let ema = prices[0];
+function generateSignal(data) {
+  let score = 0;
 
-  for (let i = 1; i < prices.length; i++) {
-    ema = prices[i] * k + ema * (1 - k);
+  // 1. Trend (200 EMA)
+  if (data.price > data.ema200) {
+    score += 2;
+    data.trend = "UP";
+  } else {
+    score += 2;
+    data.trend = "DOWN";
   }
 
-  return ema;
-}
+  // 2. RSI
+  if (data.rsi < 30) score += 2; // oversold → buy
+  if (data.rsi > 70) score += 2; // overbought → sell
 
-function calculateRSI() {
-  return 40 + Math.random() * 30;
-}
+  // 3. Support/Resistance
+  if (Math.abs(data.price - data.support) < 2) score += 2;
+  if (Math.abs(data.price - data.resistance) < 2) score += 2;
 
-function detectTrend(price, ema200) {
-  if (price > ema200) return "Bullish";
-  if (price < ema200) return "Bearish";
-  return "Neutral";
-}
+  // 4. Multi-timeframe agreement
+  if (data.mtfTrend === data.trend) score += 2;
 
-function multiTimeframeTrend() {
-
-  const trends = ["Bullish","Bearish"];
-
-  const trend1m = trends[Math.floor(Math.random()*2)];
-  const trend15m = trends[Math.floor(Math.random()*2)];
-  const trend1h = trends[Math.floor(Math.random()*2)];
-
-  return {
-    trend1m,
-    trend15m,
-    trend1h
-  };
-}
-
-function volatilitySpike() {
-  return Math.random() > 0.7;
-}
-
-function liquiditySweep() {
-  const sweeps = ["None","Buy Liquidity Taken","Sell Liquidity Taken"];
-  return sweeps[Math.floor(Math.random()*3)];
-}
-
-function stopLoss(price, signal) {
-  if(signal==="BUY") return price - 1.5;
-  if(signal==="SELL") return price + 1.5;
-  return null;
-}
-
-function takeProfit(price, signal) {
-  if(signal==="BUY") return price + 3;
-  if(signal==="SELL") return price - 3;
-  return null;
-}
-
-function generateSignal(price) {
-
-  const prices = [price-1,price-0.5,price];
-
-  const ema200 = calculateEMA(prices,200);
-
-  const rsi = calculateRSI();
-
-  const trend = detectTrend(price, ema200);
-
-  const mtf = multiTimeframeTrend();
-
-  const volSpike = volatilitySpike();
-
-  const sweep = liquiditySweep();
-
+  // 🎯 FINAL DECISION
   let signal = "HOLD";
 
-  if(
-    trend==="Bullish" &&
-    mtf.trend1m==="Bullish" &&
-    mtf.trend15m==="Bullish" &&
-    rsi < 65 &&
-    volSpike
-  ){
-    signal="BUY";
-  }
+  if (score >= 7 && data.trend === "UP") signal = "BUY";
+  if (score >= 7 && data.trend === "DOWN") signal = "SELL";
 
-  if(
-    trend==="Bearish" &&
-    mtf.trend1m==="Bearish" &&
-    mtf.trend15m==="Bearish" &&
-    rsi > 35 &&
-    volSpike
-  ){
-    signal="SELL";
-  }
-
-  const sl = stopLoss(price,signal);
-  const tp = takeProfit(price,signal);
-
-  const confidence = Math.floor(Math.random()*30)+70;
+  // SL & TP
+  let stopLoss = signal === "BUY" ? data.price - 5 : data.price + 5;
+  let takeProfit = signal === "BUY" ? data.price + 10 : data.price - 10;
 
   return {
-
-    price,
-    ema200: ema200.toFixed(2),
-    rsi: rsi.toFixed(2),
-
-    trend,
-    trend1m: mtf.trend1m,
-    trend15m: mtf.trend15m,
-    trend1h: mtf.trend1h,
-
-    volatility_spike: volSpike,
-    liquidity_sweep: sweep,
-
     signal,
-
-    stop_loss: sl ? sl.toFixed(2) : null,
-    take_profit: tp ? tp.toFixed(2) : null,
-
-    confidence: confidence + "%"
+    score,
+    trend: data.trend,
+    stopLoss,
+    takeProfit
   };
-
 }
 
-module.exports = { generateSignal };
+module.exports = generateSignal;
