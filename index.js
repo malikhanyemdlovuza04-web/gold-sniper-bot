@@ -1,36 +1,41 @@
 const express = require("express");
-const axios = require("axios");
 const generateSignal = require("./strategyEngine");
+
+console.log("🔥 BOT STARTING...");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔥 Replace with your Railway env variable
+// 🔑 Discord webhook from Railway variables
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-// Fake price generator (we upgrade later to real market data)
+// 🔢 Fake price generator (we upgrade later)
 function getFakePrice() {
   return Math.floor(Math.random() * (2400 - 1900 + 1)) + 1900;
 }
 
-// Send message to Discord
-async function sendToDiscord(message) {
+// 📲 Send to Discord (NO axios needed)
+const sendToDiscord = async (message) => {
   try {
     if (!DISCORD_WEBHOOK) {
       console.log("⚠️ No Discord webhook set");
       return;
     }
 
-    await axios.post(DISCORD_WEBHOOK, {
-      content: message,
+    await fetch(DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: message })
     });
 
-  } catch (err) {
-    console.log("Discord error:", err.message);
-  }
-}
+    console.log("✅ Sent to Discord");
 
-// Bot loop
+  } catch (err) {
+    console.log("❌ Discord error:", err.message);
+  }
+};
+
+// 🔁 Bot loop (runs every 10 seconds)
 setInterval(async () => {
   try {
     const price = getFakePrice();
@@ -48,7 +53,7 @@ setInterval(async () => {
 
     if (signalData.signal !== "HOLD") {
       const message = `
-🚨 TRADE SIGNAL 🚨
+🚨 GOLD SNIPER SIGNAL 🚨
 Type: ${signalData.signal}
 Price: ${signalData.price}
 SL: ${signalData.stopLoss}
@@ -60,15 +65,20 @@ Confidence: ${signalData.confidence}%
     }
 
   } catch (err) {
-    console.log("Bot loop error:", err.message);
+    console.log("❌ Bot loop error:", err.message);
   }
 }, 10000);
 
-// Root route (so Railway shows something)
+// 🌐 Routes
 app.get("/", (req, res) => {
   res.send("🔥 Gold Sniper Bot Running");
 });
 
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
+// 🚀 Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
