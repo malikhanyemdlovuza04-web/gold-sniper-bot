@@ -1,76 +1,74 @@
 const express = require("express");
-const cors = require("cors");
-
-const { generateSignal } = require("./strategyEngine");
-const { getMarketPrice, getSupport, getResistance, getSession } = require("./marketData");
-const sendDiscordAlert = require("./discord");
+const axios = require("axios");
+const generateSignal = require("./strategyEngine");
 
 const app = express();
-app.use(cors());
-
-// Store latest signal
-let latestSignal = null;
-
-// 🔁 AUTO SCANNER (runs every 5 seconds)
-setInterval(() => {
-
-  const price = getMarketPrice();
-
-  const signalData = generateSignal(price);
-
-  const support = getSupport(price);
-  const resistance = getResistance(price);
-  const session = getSession();
-
-  latestSignal = {
-    symbol: "XAU/USD",
-    price,
-    session,
-    support,
-    resistance,
-    ...signalData
-  };
-
-  console.log("📊 New Signal:", latestSignal);
-
-  // 🔥 DISCORD ALERT (TEST MODE: more frequent)
-  if (latestSignal.signal !== "HOLD" && parseInt(latestSignal.confidence) > 50) {
-
-    sendDiscordAlert({
-      signal: latestSignal.signal,
-      price: latestSignal.price,
-      trend: latestSignal.trend,
-      rsi: latestSignal.rsi,
-      support: latestSignal.support,
-      resistance: latestSignal.resistance,
-      stopLoss: latestSignal.stop_loss,
-      takeProfit: latestSignal.take_profit,
-      confidence: parseInt(latestSignal.confidence)
-    });
-
-  }
-
-}, 5000);
-
-// API route
-app.get("/api/signal", (req, res) => {
-
-  if (!latestSignal) {
-    return res.json({ error: "No market data yet" });
-  }
-
-  res.json(latestSignal);
-
-});
-
-// Dashboard route
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/dashboard.html");
-});
-
-// ✅ Railway port fix
 const PORT = process.env.PORT || 3000;
 
+// 🔥 Replace with your Railway env variable
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
+
+// Fake price generator (we upgrade later to real market data)
+function getFakePrice() {
+  return Math.floor(Math.random() * (2400 - 1900 + 1)) + 1900;
+}
+
+// Send message to Discord
+async function sendToDiscord(message) {
+  try {
+    if (!DISCORD_WEBHOOK) {
+      console.log("⚠️ No Discord webhook set");
+      return;
+    }
+
+    await axios.post(DISCORD_WEBHOOK, {
+      content: message,
+    });
+
+  } catch (err) {
+    console.log("Discord error:", err.message);
+  }
+}
+
+// Bot loop
+setInterval(async () => {
+  try {
+    const price = getFakePrice();
+
+    const signalData = generateSignal({
+      price: price,
+      ema200: price - 2,
+      rsi: Math.floor(Math.random() * 100),
+      support: price - 5,
+      resistance: price + 5,
+      mtfTrend: Math.random() > 0.5 ? "UP" : "DOWN"
+    });
+
+    console.log("📊 Signal:", signalData.signal);
+
+    if (signalData.signal !== "HOLD") {
+      const message = `
+🚨 TRADE SIGNAL 🚨
+Type: ${signalData.signal}
+Price: ${signalData.price}
+SL: ${signalData.stopLoss}
+TP: ${signalData.takeProfit}
+Confidence: ${signalData.confidence}%
+      `;
+
+      await sendToDiscord(message);
+    }
+
+  } catch (err) {
+    console.log("Bot loop error:", err.message);
+  }
+}, 10000);
+
+// Root route (so Railway shows something)
+app.get("/", (req, res) => {
+  res.send("🔥 Gold Sniper Bot Running");
+});
+
 app.listen(PORT, () => {
-  console.log("🚀 Gold Sniper Bot running on port " + PORT);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
