@@ -121,8 +121,9 @@ setInterval(async () => {
     if (mtf15 === trend) score++;
     if (mtf1h === trend) score++;
 
-    // Liquidity
+    // 🔥 FIXED liquidity (no more blocking)
     if (sweep !== "NONE") score += 2;
+    else score += 1;
 
     let signal = "HOLD";
 
@@ -133,7 +134,8 @@ setInterval(async () => {
     let stopLoss = signal === "BUY" ? price - atr * 2 : price + atr * 2;
     let takeProfit = signal === "BUY" ? price + atr * 4 : price - atr * 4;
 
-    let confidence = Math.min(score * 12, 95);
+    // 🔥 BOOSTED confidence
+    let confidence = Math.min(score * 15, 95);
 
     latestSignal = {
       price: price.toFixed(2),
@@ -149,7 +151,8 @@ setInterval(async () => {
 
     console.log("📊", latestSignal);
 
-    if (signal !== "HOLD" && confidence >= 50) {
+    // 🔥 LOWERED filter (more trades)
+    if (signal !== "HOLD" && confidence >= 40) {
       await sendToDiscord(`
 🚨 GOLD SNIPER SIGNAL 🚨
 Type: ${signal}
@@ -165,7 +168,7 @@ Confidence: ${confidence}%
   } catch (err) {
     console.log("❌ Bot error:", err.message);
   }
-}, 3000); // 🔥 Faster
+}, 3000);
 
 // 🌐 Routes
 app.get("/", (req, res) => {
