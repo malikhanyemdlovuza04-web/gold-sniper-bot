@@ -6,36 +6,38 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-// Store price history
 let prices = [];
 
-// 📊 Generate realistic price movement
+// 📊 Simulated price
 function getPrice() {
   let last = prices.length ? prices[prices.length - 1] : 2000;
-  let newPrice = last + (Math.random() - 0.5) * 4;
+  let newPrice = last + (Math.random() - 0.5) * 6;
   prices.push(newPrice);
 
   if (prices.length > 100) prices.shift();
   return newPrice;
 }
 
-// 📈 EMA 200
+// 📈 EMA
 function calculateEMA(period) {
   if (prices.length < period) return prices[prices.length - 1] || 2000;
+
   let k = 2 / (period + 1);
   let ema = prices[0];
 
   for (let i = 1; i < prices.length; i++) {
     ema = prices[i] * k + ema * (1 - k);
   }
+
   return ema;
 }
 
-// 📉 RSI
+// 📉 RSI (looser)
 function calculateRSI() {
   if (prices.length < 15) return 50;
 
   let gains = 0, losses = 0;
+
   for (let i = prices.length - 14; i < prices.length; i++) {
     let diff = prices[i] - prices[i - 1];
     if (diff > 0) gains += diff;
@@ -54,25 +56,26 @@ function calculateATR() {
   for (let i = prices.length - 14; i < prices.length; i++) {
     sum += Math.abs(prices[i] - prices[i - 1]);
   }
+
   return sum / 14;
 }
 
-// 🧠 Liquidity sweep detection
+// 🧠 Liquidity sweep
 function liquiditySweep(price) {
   let recentHigh = Math.max(...prices.slice(-20));
   let recentLow = Math.min(...prices.slice(-20));
 
-  if (price > recentHigh) return "SELL"; // sweep highs
-  if (price < recentLow) return "BUY";  // sweep lows
+  if (price > recentHigh) return "SELL";
+  if (price < recentLow) return "BUY";
   return "NONE";
 }
 
-// 📊 Multi-timeframe trend (simulated)
+// 📊 Fake MTF trend
 function getMTFTrend() {
   return Math.random() > 0.5 ? "UP" : "DOWN";
 }
 
-// 📲 Discord
+// 📲 Discord sender
 async function sendToDiscord(message) {
   try {
     if (!DISCORD_WEBHOOK) return;
@@ -89,14 +92,14 @@ async function sendToDiscord(message) {
   }
 }
 
-// 🔁 MAIN BOT LOOP
+// 🔁 BOT LOOP
 let latestSignal = null;
 
 setInterval(async () => {
   try {
     const price = getPrice();
 
-    const ema200 = calculateEMA(50);
+    const ema = calculateEMA(50);
     const rsi = calculateRSI();
     const atr = calculateATR();
     const sweep = liquiditySweep(price);
@@ -107,31 +110,30 @@ setInterval(async () => {
 
     let score = 0;
 
-    // Trend
-    const trend = price > ema200 ? "UP" : "DOWN";
+    const trend = price > ema ? "UP" : "DOWN";
     score += 2;
 
-    // RSI
-    if (rsi < 30 || rsi > 70) score += 2;
+    // 🔥 Looser RSI
+    if (rsi < 40 || rsi > 60) score += 2;
 
     // MTF alignment
     if (mtf1 === trend) score++;
     if (mtf15 === trend) score++;
     if (mtf1h === trend) score++;
 
-    // Liquidity sweep
+    // Liquidity
     if (sweep !== "NONE") score += 2;
 
     let signal = "HOLD";
 
-    if (score >= 6 && trend === "UP") signal = "BUY";
-    if (score >= 6 && trend === "DOWN") signal = "SELL";
+    // 🔥 LOWERED threshold
+    if (score >= 4 && trend === "UP") signal = "BUY";
+    if (score >= 4 && trend === "DOWN") signal = "SELL";
 
-    // SL & TP using ATR
     let stopLoss = signal === "BUY" ? price - atr * 2 : price + atr * 2;
     let takeProfit = signal === "BUY" ? price + atr * 4 : price - atr * 4;
 
-    let confidence = Math.min(score * 10, 95);
+    let confidence = Math.min(score * 12, 95);
 
     latestSignal = {
       price: price.toFixed(2),
@@ -147,8 +149,7 @@ setInterval(async () => {
 
     console.log("📊", latestSignal);
 
-    // 🔥 Send only strong signals
-    if (signal !== "HOLD" && confidence >= 60) {
+    if (signal !== "HOLD" && confidence >= 50) {
       await sendToDiscord(`
 🚨 GOLD SNIPER SIGNAL 🚨
 Type: ${signal}
@@ -164,9 +165,9 @@ Confidence: ${confidence}%
   } catch (err) {
     console.log("❌ Bot error:", err.message);
   }
-}, 5000);
+}, 3000); // 🔥 Faster
 
-// 🌐 ROUTES
+// 🌐 Routes
 app.get("/", (req, res) => {
   res.send("🔥 Gold Sniper Bot Running");
 });
@@ -177,7 +178,7 @@ app.get("/dashboard", (req, res) => {
 
 app.get("/health", (req, res) => res.send("OK"));
 
-// 🚀 START SERVER
+// 🚀 Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
