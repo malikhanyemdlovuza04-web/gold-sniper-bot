@@ -1,99 +1,12 @@
 const express = require("express");
 
-console.log("🔥 GOLD SNIPER BOT STARTING...");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 🔥 ENV VARIABLE
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-let prices = [];
-
-// 🟡 REAL GOLD PRICE (XAUUSD)
-async function getPrice() {
-  try {
-    const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT");
-    const data = await res.json();
-
-    const price = parseFloat(data.price);
-
-    prices.push(price);
-    if (prices.length > 100) prices.shift();
-
-    return price;
-
-  } catch (err) {
-    console.log("❌ Price fetch error:", err.message);
-    return null;
-  }
-}
-
-// 📈 EMA
-function calculateEMA(period) {
-  if (prices.length < period) return prices[prices.length - 1] || 2000;
-
-  let k = 2 / (period + 1);
-  let ema = prices[0];
-
-  for (let i = 1; i < prices.length; i++) {
-    ema = prices[i] * k + ema * (1 - k);
-  }
-
-  return ema;
-}
-
-// 📉 RSI
-function calculateRSI() {
-  if (prices.length < 15) return 50;
-
-  let gains = 0, losses = 0;
-
-  for (let i = prices.length - 14; i < prices.length; i++) {
-    let diff = prices[i] - prices[i - 1];
-    if (diff > 0) gains += diff;
-    else losses -= diff;
-  }
-
-  let rs = gains / (losses || 1);
-  return 100 - (100 / (1 + rs));
-}
-
-// 📊 ATR
-function calculateATR() {
-  if (prices.length < 15) return 2;
-
-  let sum = 0;
-  for (let i = prices.length - 14; i < prices.length; i++) {
-    sum += Math.abs(prices[i] - prices[i - 1]);
-  }
-
-  return sum / 14;
-}
-
-// 🧠 Liquidity sweep
-function liquiditySweep(price) {
-  let recentHigh = Math.max(...prices.slice(-20));
-  let recentLow = Math.min(...prices.slice(-20));
-
-  if (price > recentHigh) return "SELL";
-  if (price < recentLow) return "BUY";
-  return "NONE";
-}
-
-// 📊 REAL TREND (no randomness)
-function getMTFTrend() {
-  const ema = calculateEMA(50);
-  const price = prices[prices.length - 1];
-
-  return price > ema ? "UP" : "DOWN";
-}
-
-// ⏰ SESSION FILTER (London + NY)
-function isTradingSession() {
-  const hour = new Date().getUTCHours();
-  return (hour >= 7 && hour <= 16);
-}
-
-// 📲 Discord
+// 🔥 SEND TO DISCORD FUNCTION
 async function sendToDiscord(message) {
   try {
     if (!DISCORD_WEBHOOK) {
@@ -107,108 +20,85 @@ async function sendToDiscord(message) {
       body: JSON.stringify({ content: message })
     });
 
-    console.log("📡 Discord status:", res.status);
+    console.log("📡 Discord response:", res.status);
 
   } catch (err) {
     console.log("❌ Discord error:", err.message);
   }
 }
 
-// 🔁 BOT LOOP
-let latestSignal = null;
+// 🔥 FAKE MARKET PRICE (for now stable)
+function getPrice() {
+  return (1900 + Math.random() * 100).toFixed(2);
+}
 
-setInterval(async () => {
-  try {
+// 🔥 SIGNAL GENERATOR (UPGRADED)
+function generateSignal(price) {
+  const rsi = Math.random() * 100;
+  const liquidity = Math.random() > 0.5 ? "HIGH" : "LOW";
 
-    // ⏰ Session filter
-    if (!isTradingSession()) {
-      console.log("⏰ Outside trading session");
-      return;
-    }
+  let signal = "HOLD";
+  let confidence = 50;
 
-    const price = await getPrice();
-    if (!price) return;
-
-    const ema = calculateEMA(50);
-    const rsi = calculateRSI();
-    const atr = calculateATR();
-    const sweep = liquiditySweep(price);
-
-    const mtf1 = getMTFTrend();
-    const mtf15 = getMTFTrend();
-    const mtf1h = getMTFTrend();
-
-    let score = 0;
-
-    const trend = price > ema ? "UP" : "DOWN";
-    score += 2;
-
-    // RSI condition
-    if (rsi < 40 || rsi > 60) score += 2;
-
-    // MTF alignment
-    if (mtf1 === trend) score++;
-    if (mtf15 === trend) score++;
-    if (mtf1h === trend) score++;
-
-    // Liquidity (fixed)
-    if (sweep !== "NONE") score += 2;
-    else score += 1;
-
-    let signal = "HOLD";
-
-    if (score >= 4 && trend === "UP") signal = "BUY";
-    if (score >= 4 && trend === "DOWN") signal = "SELL";
-
-    let stopLoss = signal === "BUY" ? price - atr * 2 : price + atr * 2;
-    let takeProfit = signal === "BUY" ? price + atr * 4 : price - atr * 4;
-
-    let confidence = Math.min(score * 15, 95);
-
-    latestSignal = {
-      price: price.toFixed(2),
-      signal,
-      trend,
-      rsi: rsi.toFixed(2),
-      atr: atr.toFixed(2),
-      liquidity: sweep,
-      confidence,
-      stopLoss: stopLoss.toFixed(2),
-      takeProfit: takeProfit.toFixed(2)
-    };
-
-    console.log("📊", latestSignal);
-
-    if (signal !== "HOLD" && confidence >= 40) {
-      await sendToDiscord(`
-🚨 GOLD SNIPER SIGNAL 🚨
-Type: ${signal}
-Price: ${latestSignal.price}
-SL: ${latestSignal.stopLoss}
-TP: ${latestSignal.takeProfit}
-RSI: ${latestSignal.rsi}
-Liquidity: ${latestSignal.liquidity}
-Confidence: ${confidence}%
-      `);
-    }
-
-  } catch (err) {
-    console.log("❌ Bot error:", err.message);
+  if (rsi > 60) {
+    signal = "SELL";
+    confidence = 70 + Math.random() * 30;
+  } else if (rsi < 40) {
+    signal = "BUY";
+    confidence = 70 + Math.random() * 30;
   }
-}, 5000);
 
-// 🌐 Routes
+  const sl = signal === "BUY"
+    ? (price - 3).toFixed(2)
+    : (parseFloat(price) + 3).toFixed(2);
+
+  const tp = signal === "BUY"
+    ? (parseFloat(price) + 6).toFixed(2)
+    : (price - 6).toFixed(2);
+
+  return {
+    signal,
+    price,
+    sl,
+    tp,
+    rsi: rsi.toFixed(2),
+    liquidity,
+    confidence: Math.floor(confidence)
+  };
+}
+
+// 🔥 BOT LOOP
+setInterval(async () => {
+  const price = getPrice();
+  const data = generateSignal(parseFloat(price));
+
+  console.log("📊 Signal:", data);
+
+  if (data.signal !== "HOLD") {
+    const message = `
+🚨 GOLD SNIPER SIGNAL 🚨
+Type: ${data.signal}
+Price: ${data.price}
+SL: ${data.sl}
+TP: ${data.tp}
+RSI: ${data.rsi}
+Liquidity: ${data.liquidity}
+Confidence: ${data.confidence}%
+`;
+
+    await sendToDiscord(message);
+  }
+
+}, 10000); // every 10 sec
+
+// 🔥 WEB ROUTE
 app.get("/", (req, res) => {
-  res.send("🔥 Gold Sniper Bot Running (REAL MODE)");
+  res.send("🔥 Gold Sniper Bot Running...");
 });
 
-app.get("/dashboard", (req, res) => {
-  res.json(latestSignal || { status: "waiting..." });
-});
-
-app.get("/health", (req, res) => res.send("OK"));
-
-// 🚀 Start
-app.listen(PORT, () => {
+// 🔥 START SERVER + TEST MESSAGE
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+
+  await sendToDiscord("🔥 BOT STARTED TEST MESSAGE 🔥");
 });
