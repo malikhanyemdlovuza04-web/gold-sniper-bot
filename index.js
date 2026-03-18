@@ -8,14 +8,23 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
 let prices = [];
 
-// 📊 Simulated price
-function getPrice() {
-  let last = prices.length ? prices[prices.length - 1] : 2000;
-  let newPrice = last + (Math.random() - 0.5) * 6;
-  prices.push(newPrice);
+// 🟡 REAL GOLD PRICE (XAUUSD)
+async function getPrice() {
+  try {
+    const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT");
+    const data = await res.json();
 
-  if (prices.length > 100) prices.shift();
-  return newPrice;
+    const price = parseFloat(data.price);
+
+    prices.push(price);
+    if (prices.length > 100) prices.shift();
+
+    return price;
+
+  } catch (err) {
+    console.log("❌ Price fetch error:", err.message);
+    return null;
+  }
 }
 
 // 📈 EMA
@@ -32,7 +41,7 @@ function calculateEMA(period) {
   return ema;
 }
 
-// 📉 RSI (looser)
+// 📉 RSI
 function calculateRSI() {
   if (prices.length < 15) return 50;
 
@@ -70,23 +79,36 @@ function liquiditySweep(price) {
   return "NONE";
 }
 
-// 📊 Fake MTF trend
+// 📊 REAL TREND (no randomness)
 function getMTFTrend() {
-  return Math.random() > 0.5 ? "UP" : "DOWN";
+  const ema = calculateEMA(50);
+  const price = prices[prices.length - 1];
+
+  return price > ema ? "UP" : "DOWN";
 }
 
-// 📲 Discord sender
+// ⏰ SESSION FILTER (London + NY)
+function isTradingSession() {
+  const hour = new Date().getUTCHours();
+  return (hour >= 7 && hour <= 16);
+}
+
+// 📲 Discord
 async function sendToDiscord(message) {
   try {
-    if (!DISCORD_WEBHOOK) return;
+    if (!DISCORD_WEBHOOK) {
+      console.log("❌ No webhook set");
+      return;
+    }
 
-    await fetch(DISCORD_WEBHOOK, {
+    const res = await fetch(DISCORD_WEBHOOK, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: message })
     });
 
-    console.log("✅ Sent to Discord");
+    console.log("📡 Discord status:", res.status);
+
   } catch (err) {
     console.log("❌ Discord error:", err.message);
   }
@@ -97,7 +119,15 @@ let latestSignal = null;
 
 setInterval(async () => {
   try {
-    const price = getPrice();
+
+    // ⏰ Session filter
+    if (!isTradingSession()) {
+      console.log("⏰ Outside trading session");
+      return;
+    }
+
+    const price = await getPrice();
+    if (!price) return;
 
     const ema = calculateEMA(50);
     const rsi = calculateRSI();
@@ -113,7 +143,7 @@ setInterval(async () => {
     const trend = price > ema ? "UP" : "DOWN";
     score += 2;
 
-    // 🔥 Looser RSI
+    // RSI condition
     if (rsi < 40 || rsi > 60) score += 2;
 
     // MTF alignment
@@ -121,20 +151,18 @@ setInterval(async () => {
     if (mtf15 === trend) score++;
     if (mtf1h === trend) score++;
 
-    // 🔥 FIXED liquidity (no more blocking)
+    // Liquidity (fixed)
     if (sweep !== "NONE") score += 2;
     else score += 1;
 
     let signal = "HOLD";
 
-    // 🔥 LOWERED threshold
     if (score >= 4 && trend === "UP") signal = "BUY";
     if (score >= 4 && trend === "DOWN") signal = "SELL";
 
     let stopLoss = signal === "BUY" ? price - atr * 2 : price + atr * 2;
     let takeProfit = signal === "BUY" ? price + atr * 4 : price - atr * 4;
 
-    // 🔥 BOOSTED confidence
     let confidence = Math.min(score * 15, 95);
 
     latestSignal = {
@@ -151,7 +179,6 @@ setInterval(async () => {
 
     console.log("📊", latestSignal);
 
-    // 🔥 LOWERED filter (more trades)
     if (signal !== "HOLD" && confidence >= 40) {
       await sendToDiscord(`
 🚨 GOLD SNIPER SIGNAL 🚨
@@ -168,11 +195,11 @@ Confidence: ${confidence}%
   } catch (err) {
     console.log("❌ Bot error:", err.message);
   }
-}, 3000);
+}, 5000);
 
 // 🌐 Routes
 app.get("/", (req, res) => {
-  res.send("🔥 Gold Sniper Bot Running");
+  res.send("🔥 Gold Sniper Bot Running (REAL MODE)");
 });
 
 app.get("/dashboard", (req, res) => {
@@ -181,7 +208,7 @@ app.get("/dashboard", (req, res) => {
 
 app.get("/health", (req, res) => res.send("OK"));
 
-// 🚀 Start server
+// 🚀 Start
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
