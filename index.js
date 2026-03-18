@@ -3,14 +3,13 @@ const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔥 ENV VARIABLE
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-// 🔥 SEND TO DISCORD FUNCTION
+// 🔥 DISCORD FUNCTION
 async function sendToDiscord(message) {
   try {
     if (!DISCORD_WEBHOOK) {
-      console.log("❌ No webhook set");
+      console.log("❌ No Discord webhook set");
       return;
     }
 
@@ -20,61 +19,115 @@ async function sendToDiscord(message) {
       body: JSON.stringify({ content: message })
     });
 
-    console.log("📡 Discord response:", res.status);
-
+    console.log("📡 Discord status:", res.status);
   } catch (err) {
     console.log("❌ Discord error:", err.message);
   }
 }
 
-// 🔥 FAKE MARKET PRICE (for now stable)
-function getPrice() {
-  return (1900 + Math.random() * 100).toFixed(2);
+// 🔥 REAL GOLD PRICE (FREE API)
+async function getGoldPrice() {
+  try {
+    const res = await fetch("https://api.gold-api.com/price/XAU");
+    const data = await res.json();
+
+    return parseFloat(data.price);
+  } catch (err) {
+    console.log("❌ Price fetch error:", err.message);
+    return null;
+  }
 }
 
-// 🔥 SIGNAL GENERATOR (UPGRADED)
-function generateSignal(price) {
-  const rsi = Math.random() * 100;
-  const liquidity = Math.random() > 0.5 ? "HIGH" : "LOW";
+// 🔥 RSI STORAGE
+let lastPrices = [];
 
+// 🔥 RSI CALCULATION
+function calculateRSI(price) {
+  lastPrices.push(price);
+
+  if (lastPrices.length > 14) {
+    lastPrices.shift();
+  }
+
+  if (lastPrices.length < 14) return null;
+
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i < lastPrices.length; i++) {
+    const diff = lastPrices[i] - lastPrices[i - 1];
+
+    if (diff > 0) gains += diff;
+    else losses += Math.abs(diff);
+  }
+
+  const rs = gains / (losses || 1);
+  const rsi = 100 - (100 / (1 + rs));
+
+  return parseFloat(rsi.toFixed(2));
+}
+
+// 🔥 SIGNAL LOGIC
+function generateSignal(price, rsi) {
   let signal = "HOLD";
   let confidence = 50;
 
-  if (rsi > 60) {
-    signal = "SELL";
-    confidence = 70 + Math.random() * 30;
-  } else if (rsi < 40) {
+  if (rsi < 35) {
     signal = "BUY";
-    confidence = 70 + Math.random() * 30;
+    confidence = 80 + Math.random() * 20;
+  } else if (rsi > 65) {
+    signal = "SELL";
+    confidence = 80 + Math.random() * 20;
   }
 
   const sl = signal === "BUY"
     ? (price - 3).toFixed(2)
-    : (parseFloat(price) + 3).toFixed(2);
+    : (price + 3).toFixed(2);
 
   const tp = signal === "BUY"
-    ? (parseFloat(price) + 6).toFixed(2)
+    ? (price + 6).toFixed(2)
     : (price - 6).toFixed(2);
 
   return {
     signal,
-    price,
+    price: price.toFixed(2),
     sl,
     tp,
-    rsi: rsi.toFixed(2),
-    liquidity,
+    rsi,
     confidence: Math.floor(confidence)
   };
 }
 
-// 🔥 BOT LOOP
+// 🔥 ANTI-SPAM COOLDOWN
+let lastSignalTime = 0;
+const COOLDOWN = 60000; // 60 seconds
+
+// 🔥 MAIN BOT LOOP
 setInterval(async () => {
-  const price = getPrice();
-  const data = generateSignal(parseFloat(price));
+  const price = await getGoldPrice();
 
-  console.log("📊 Signal:", data);
+  if (!price) return;
 
-  if (data.signal !== "HOLD") {
+  const rsi = calculateRSI(price);
+
+  if (!rsi) {
+    console.log("⏳ Waiting for RSI data...");
+    return;
+  }
+
+  const data = generateSignal(price, rsi);
+
+  console.log("📊", data);
+
+  const now = Date.now();
+
+  if (
+    data.signal !== "HOLD" &&
+    data.confidence > 75 &&
+    now - lastSignalTime > COOLDOWN
+  ) {
+    lastSignalTime = now;
+
     const message = `
 🚨 GOLD SNIPER SIGNAL 🚨
 Type: ${data.signal}
@@ -82,23 +135,22 @@ Price: ${data.price}
 SL: ${data.sl}
 TP: ${data.tp}
 RSI: ${data.rsi}
-Liquidity: ${data.liquidity}
 Confidence: ${data.confidence}%
 `;
 
     await sendToDiscord(message);
   }
 
-}, 10000); // every 10 sec
+}, 30000); // runs every 30 sec
 
-// 🔥 WEB ROUTE
+// 🔥 HEALTH CHECK ROUTE
 app.get("/", (req, res) => {
-  res.send("🔥 Gold Sniper Bot Running...");
+  res.send("🔥 Gold Sniper Bot Running (REAL DATA)");
 });
 
 // 🔥 START SERVER + TEST MESSAGE
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
 
-  await sendToDiscord("🔥 BOT STARTED TEST MESSAGE 🔥");
+  await sendToDiscord("🔥 BOT STARTED (REAL DATA MODE) 🔥");
 });
