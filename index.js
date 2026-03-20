@@ -16,7 +16,6 @@ async function sendToDiscord(message) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: message })
     });
-
   } catch (err) {
     console.log("Discord error:", err.message);
   }
@@ -30,6 +29,7 @@ async function getPrice() {
     );
     const data = await res.json();
 
+    if (!data.price) return null;
     return parseFloat(data.price);
 
   } catch (err) {
@@ -41,14 +41,14 @@ async function getPrice() {
 // ===== STORAGE =====
 let prices = [];
 
-// ===== EMA 50 =====
-function calculateEMA() {
-  if (prices.length < 50) return null;
+// ===== EMA =====
+function EMA(period) {
+  if (prices.length < period) return null;
 
-  const k = 2 / (50 + 1);
-  let ema = prices[0];
+  const k = 2 / (period + 1);
+  let ema = prices[prices.length - period];
 
-  for (let i = 1; i < prices.length; i++) {
+  for (let i = prices.length - period + 1; i < prices.length; i++) {
     ema = prices[i] * k + ema * (1 - k);
   }
 
@@ -56,14 +56,14 @@ function calculateEMA() {
 }
 
 // ===== RSI =====
-function calculateRSI() {
+function RSI() {
   if (prices.length < 14) return null;
 
   let gains = 0;
   let losses = 0;
 
-  for (let i = 1; i < 14; i++) {
-    const diff = prices[i] - prices[i - 1];
+  for (let i = prices.length - 14; i < prices.length - 1; i++) {
+    const diff = prices[i + 1] - prices[i];
 
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
@@ -73,108 +73,144 @@ function calculateRSI() {
   return 100 - (100 / (1 + rs));
 }
 
-// ===== SESSION FILTER =====
-function isTradingSession() {
-  const hour = new Date().getUTCHours();
+// ===== MOMENTUM =====
+function momentum() {
+  if (prices.length < 6) return false;
 
-  return (
-    (hour >= 7 && hour <= 11) || // London
-    (hour >= 13 && hour <= 17)   // New York
-  );
+  const move = Math.abs(prices.at(-1) - prices.at(-6));
+  return move > 0.02;
 }
 
-// ===== MOMENTUM =====
-function hasMomentum() {
-  if (prices.length < 5) return false;
+// ===== LIQUIDITY SWEEP (BASIC) =====
+function liquiditySweep() {
+  if (prices.length < 10) return false;
 
-  const recent = prices.slice(-5);
-  const move = Math.abs(recent[4] - recent[0]);
+  const recentHigh = Math.max(...prices.slice(-10));
+  const recentLow = Math.min(...prices.slice(-10));
+  const current = prices.at(-1);
 
-  return move > 0.05;
+  return current >= recentHigh || current <= recentLow;
+}
+
+// ===== BREAK OF STRUCTURE (SIMULATED) =====
+function breakOfStructure() {
+  if (prices.length < 10) return null;
+
+  const prevHigh = Math.max(...prices.slice(-10, -5));
+  const prevLow = Math.min(...prices.slice(-10, -5));
+  const current = prices.at(-1);
+
+  if (current > prevHigh) return "BULLISH";
+  if (current < prevLow) return "BEARISH";
+
+  return null;
 }
 
 // ===== SIGNAL ENGINE =====
-function generateSignal(price, rsi, ema) {
+function generateSignal(price, rsi, ema50, ema200) {
+  let score = 0;
+  let reasons = [];
+
+  const trendUp = ema50 > ema200;
+  const trendDown = ema50 < ema200;
+
+  if (trendUp) {
+    score += 2;
+    reasons.push("Uptrend");
+  }
+
+  if (trendDown) {
+    score += 2;
+    reasons.push("Downtrend");
+  }
+
+  if (rsi < 40 && trendUp) {
+    score += 2;
+    reasons.push("RSI Oversold");
+  }
+
+  if (rsi > 60 && trendDown) {
+    score += 2;
+    reasons.push("RSI Overbought");
+  }
+
+  if (momentum()) {
+    score += 1;
+    reasons.push("Momentum");
+  }
+
+  const bos = breakOfStructure();
+  if (bos) {
+    score += 2;
+    reasons.push("BOS " + bos);
+  }
+
+  if (liquiditySweep()) {
+    score += 1;
+    reasons.push("Liquidity Sweep");
+  }
+
   let signal = "HOLD";
-  let confidence = 0;
 
-  const trendUp = price > ema;
-  const trendDown = price < ema;
+  if (score >= 6 && trendUp) signal = "BUY";
+  if (score >= 6 && trendDown) signal = "SELL";
 
-  if (trendUp && rsi < 35) {
-    signal = "BUY";
-    confidence = 85;
-  }
+  const sl = signal === "BUY" ? price - 0.30 : price + 0.30;
+  const tp = signal === "BUY" ? price + 0.80 : price - 0.80;
 
-  if (trendDown && rsi > 65) {
-    signal = "SELL";
-    confidence = 85;
-  }
+  let grade = "C";
+  if (score >= 7) grade = "A+";
+  else if (score >= 6) grade = "A";
+  else if (score >= 5) grade = "B";
 
-  const sl = signal === "BUY"
-    ? price - 0.30
-    : price + 0.30;
-
-  const tp = signal === "BUY"
-    ? price + 0.60
-    : price - 0.60;
-
-  return { signal, sl, tp, confidence };
+  return { signal, sl, tp, score, grade, reasons };
 }
 
 // ===== COOLDOWN =====
 let lastSignalTime = 0;
-const COOLDOWN = 90000;
+const COOLDOWN = 120000;
 
-// ===== BOT LOOP =====
+// ===== LOOP =====
 setInterval(async () => {
   const price = await getPrice();
   if (!price) return;
 
   prices.push(price);
-  if (prices.length > 100) prices.shift();
+  if (prices.length > 200) prices.shift();
 
-  const ema = calculateEMA();
-  const rsi = calculateRSI();
+  const ema50 = EMA(50);
+  const ema200 = EMA(200);
+  const rsi = RSI();
 
-  if (!ema || !rsi) {
+  if (!ema50 || !ema200 || !rsi) {
     console.log("Collecting data...");
     return;
   }
 
-  if (!isTradingSession()) {
-    console.log("Outside session");
-    return;
-  }
+  const { signal, sl, tp, score, grade, reasons } =
+    generateSignal(price, rsi, ema50, ema200);
 
-  if (!hasMomentum()) {
-    console.log("No momentum");
-    return;
-  }
-
-  const { signal, sl, tp, confidence } = generateSignal(price, rsi, ema);
-
-  console.log({ price, rsi, ema, signal });
+  console.log({ price, rsi, ema50, ema200, signal, score });
 
   const now = Date.now();
 
-  if (
-    signal !== "HOLD" &&
-    confidence > 80 &&
-    now - lastSignalTime > COOLDOWN
-  ) {
+  if (signal !== "HOLD" && score >= 6 && now - lastSignalTime > COOLDOWN) {
     lastSignalTime = now;
 
     const message = `
-💱 USD/JPY SNIPER PRO 💱
+🔥 USDJPY SMC ELITE 🔥
 Type: ${signal}
 Price: ${price.toFixed(3)}
 SL: ${sl.toFixed(3)}
 TP: ${tp.toFixed(3)}
+Score: ${score}
+Grade: ${grade}
 RSI: ${rsi.toFixed(2)}
-Trend EMA50: ${ema.toFixed(3)}
-Session: ACTIVE
-Confidence: ${confidence}%
+EMA50: ${ema50.toFixed(3)}
+EMA200: ${ema200.toFixed(3)}
+
+Confluence:
+- ${reasons.join("\n- ")}
 `;
 
     await sendToDiscord(message);
@@ -184,10 +220,10 @@ Confidence: ${confidence}%
 
 // ===== SERVER =====
 app.get("/", (req, res) => {
-  res.send("🔥 SNIPER BOT RUNNING");
+  res.send("🔥 SMC ELITE BOT RUNNING");
 });
 
 app.listen(PORT, async () => {
-  console.log("🚀 Bot started");
-  await sendToDiscord("🔥 SNIPER BOT LIVE 🔥");
+  console.log("🚀 SMC BOT STARTED");
+  await sendToDiscord("🔥 SMC ELITE BOT LIVE 🔥");
 });
