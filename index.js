@@ -73,15 +73,15 @@ function RSI() {
   return 100 - (100 / (1 + rs));
 }
 
-// ===== MOMENTUM =====
+// ===== MOMENTUM (LOOSENED) =====
 function momentum() {
   if (prices.length < 6) return false;
 
   const move = Math.abs(prices.at(-1) - prices.at(-6));
-  return move > 0.02;
+  return move > 0.01; // 🔥 loosened
 }
 
-// ===== LIQUIDITY SWEEP (BASIC) =====
+// ===== LIQUIDITY SWEEP =====
 function liquiditySweep() {
   if (prices.length < 10) return false;
 
@@ -92,7 +92,7 @@ function liquiditySweep() {
   return current >= recentHigh || current <= recentLow;
 }
 
-// ===== BREAK OF STRUCTURE (SIMULATED) =====
+// ===== BREAK OF STRUCTURE =====
 function breakOfStructure() {
   if (prices.length < 10) return null;
 
@@ -104,6 +104,12 @@ function breakOfStructure() {
   if (current < prevLow) return "BEARISH";
 
   return null;
+}
+
+// ===== PULLBACK (LOOSENED) =====
+function isPullback(price, ema50) {
+  const distance = Math.abs(price - ema50);
+  return distance < 0.30; // 🔥 loosened
 }
 
 // ===== SIGNAL ENGINE =====
@@ -124,12 +130,13 @@ function generateSignal(price, rsi, ema50, ema200) {
     reasons.push("Downtrend");
   }
 
-  if (rsi < 40 && trendUp) {
+  // 🔥 LOOSENED RSI
+  if (rsi < 45 && trendUp) {
     score += 2;
     reasons.push("RSI Oversold");
   }
 
-  if (rsi > 60 && trendDown) {
+  if (rsi > 55 && trendDown) {
     score += 2;
     reasons.push("RSI Overbought");
   }
@@ -152,8 +159,8 @@ function generateSignal(price, rsi, ema50, ema200) {
 
   let signal = "HOLD";
 
-  if (score >= 6 && trendUp) signal = "BUY";
-  if (score >= 6 && trendDown) signal = "SELL";
+  if (score >= 5 && trendUp) signal = "BUY";   // 🔥 lowered threshold
+  if (score >= 5 && trendDown) signal = "SELL";
 
   const sl = signal === "BUY" ? price - 0.30 : price + 0.30;
   const tp = signal === "BUY" ? price + 0.80 : price - 0.80;
@@ -166,9 +173,9 @@ function generateSignal(price, rsi, ema50, ema200) {
   return { signal, sl, tp, score, grade, reasons };
 }
 
-// ===== COOLDOWN =====
+// ===== COOLDOWN (LOOSENED) =====
 let lastSignalTime = 0;
-const COOLDOWN = 120000;
+const COOLDOWN = 60000;
 
 // ===== LOOP =====
 setInterval(async () => {
@@ -190,11 +197,18 @@ setInterval(async () => {
   const { signal, sl, tp, score, grade, reasons } =
     generateSignal(price, rsi, ema50, ema200);
 
-  console.log({ price, rsi, ema50, ema200, signal, score });
+  console.log({
+    price,
+    rsi: rsi.toFixed(2),
+    ema50: ema50.toFixed(3),
+    ema200: ema200.toFixed(3),
+    signal,
+    score
+  });
 
   const now = Date.now();
 
-  if (signal !== "HOLD" && score >= 6 && now - lastSignalTime > COOLDOWN) {
+  if (signal !== "HOLD" && score >= 5 && now - lastSignalTime > COOLDOWN) {
     lastSignalTime = now;
 
     const message = `
